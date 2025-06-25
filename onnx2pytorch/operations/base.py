@@ -36,5 +36,7 @@ class OperatorWrapper(Operator, ABC):
             Any torch function. It is used in-place of forward method.
         """
         self.forward = op
-        self.__class__.__name__ = op.__name__
+        # self.__class__.__name__ = op.__name__
+
+        self.__class__.__name__ = getattr(op, '__name__', op.__class__.__name__)
         super().__init__()
