@@ -53,6 +53,11 @@ def get_init_parameter(modules, item, default):
             return getattr(mod, item_name)
     return default
 
+def extract_constant(weights, node_input_name):
+    if node_input_name in weights:
+        const = onnx.numpy_helper.to_array(weights[node_input_name])
+        return torch.tensor(const, dtype=torch.float32)
+    return None
 
 def convert_operations(onnx_graph, opset_version, batch_dim=0, enable_pruning=True):
     """
@@ -80,13 +85,13 @@ def convert_operations(onnx_graph, opset_version, batch_dim=0, enable_pruning=Tr
         # extract only useful inputs
         params = [weights[par_name] for par_name in node.input if par_name in weights]
 
-        # if node.op_type == "Add":
-        #     op = Add(feature_dim=batch_dim + 1)  # 0 for CV models and 1 for NLP
         if node.op_type == "Add":
-            const = None
-            if len(node.input) >= 2 and node.input[1] in weights:
-                const = onnx.numpy_helper.to_array(weights[node.input[1]])
-            op = Add(feature_dim=batch_dim + 1, other=const)
+            op = Add(feature_dim=batch_dim + 1)  # 0 for CV models and 1 for NLP
+        # if node.op_type == "Add":
+        #     const = None
+        #     if len(node.input) >= 2 and node.input[1] in weights:
+        #         const = onnx.numpy_helper.to_array(weights[node.input[1]])
+        #     op = Add(feature_dim=batch_dim + 1, other=const)
         elif node.op_type == "And":
             op = OperatorWrapper(torch.logical_and)
         elif node.op_type == "AveragePool":
@@ -177,14 +182,40 @@ def convert_operations(onnx_graph, opset_version, batch_dim=0, enable_pruning=Tr
                     onnx_graph.node.pop(i + 1)  # remove next node
             else:
                 op = MatMul()
+
+        # Modified this
         elif node.op_type == "Max":
-            op = OperatorWrapper(torch.max)
+            if len(node.input) == 2:
+                const = extract_constant(weights, node.input[1])
+                if const is not None:
+                    op = OperatorWrapper(partial(torch.max, other=const))
+                else:
+                    op = OperatorWrapper(torch.max)
+            else:
+                op = OperatorWrapper(torch.max)
+            
         elif node.op_type == "MaxPool":
             op = convert_layer(node, "MaxPool")
+        
         elif node.op_type == "Min":
-            op = OperatorWrapper(torch.min)
+            if len(node.input) == 2:
+                const = extract_constant(weights, node.input[1])
+                if const is not None:
+                    op = OperatorWrapper(partial(torch.min, other=const))
+                else:
+                    op = OperatorWrapper(torch.min)
+            else:
+                op = OperatorWrapper(torch.min)
+        # Modified this
         elif node.op_type == "Mul":
-            op = OperatorWrapper(torch.mul)
+            if len(node.input) == 2:
+                    const = extract_constant(weights, node.input[1])
+                    if const is not None:
+                        op = OperatorWrapper(partial(torch.mul, other=const))
+                    else:
+                        op = OperatorWrapper(torch.mul)
+            else:
+                op = OperatorWrapper(torch.mul)
         elif node.op_type == "NonMaxSuppression":
             op = NonMaxSuppression(**extract_attributes(node))
         elif node.op_type == "Not":
@@ -266,8 +297,20 @@ def convert_operations(onnx_graph, opset_version, batch_dim=0, enable_pruning=Tr
             op = OperatorWrapper(torch.sqrt)
         elif node.op_type == "Squeeze":
             op = Squeeze(opset_version=opset_version, **extract_attributes(node))
+        
+        # Modified this
         elif node.op_type == "Sub":
-            op = OperatorWrapper(torch.sub)
+            # op = OperatorWrapper(torch.sub)
+            if len(node.input) == 2:
+                const = extract_constant(weights, node.input[1])
+                if const is not None:
+                    # Partial means that the second argument is fixed
+                    # and the first argument is the one that will be passed
+                    op = OperatorWrapper(partial(torch.sub, other=const))
+                else:
+                    op = OperatorWrapper(torch.sub)
+            else:
+                op = OperatorWrapper(torch.sub)
         elif node.op_type == "Tanh":
             op = OperatorWrapper(torch.tanh)
         elif node.op_type == "ThresholdedRelu":
