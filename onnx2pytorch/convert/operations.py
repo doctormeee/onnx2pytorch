@@ -80,8 +80,13 @@ def convert_operations(onnx_graph, opset_version, batch_dim=0, enable_pruning=Tr
         # extract only useful inputs
         params = [weights[par_name] for par_name in node.input if par_name in weights]
 
+        # if node.op_type == "Add":
+        #     op = Add(feature_dim=batch_dim + 1)  # 0 for CV models and 1 for NLP
         if node.op_type == "Add":
-            op = Add(feature_dim=batch_dim + 1)  # 0 for CV models and 1 for NLP
+            const = None
+            if len(node.input) >= 2 and node.input[1] in weights:
+                const = onnx.numpy_helper.to_array(weights[node.input[1]])
+            op = Add(feature_dim=batch_dim + 1, other=const)
         elif node.op_type == "And":
             op = OperatorWrapper(torch.logical_and)
         elif node.op_type == "AveragePool":

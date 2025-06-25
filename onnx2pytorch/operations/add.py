@@ -8,11 +8,13 @@ from onnx2pytorch.operations.base import Operator
 
 
 class Add(Operator):
-    def __init__(self, input_shape=None, input_indices=None, feature_dim=1):
+    def __init__(self, input_shape=None, input_indices=None, feature_dim=1, other=None):
         self.input_shape = input_shape
         self.input_indices = input_indices
         self.feature_dim = feature_dim  # 2 for transformers else 1
         self.out = None
+
+        self.other = nn.Parameter(torch.tensor(other, dtype=torch.float32), requires_grad=False) if other is not None else None
 
         if input_shape and input_indices:
             self.out = torch.zeros(input_shape)
@@ -20,6 +22,9 @@ class Add(Operator):
         super().__init__()
 
     def forward(self, *input):
+        if self.other is not None:
+            return input[0] + self.other
+    
         if self.input_indices:
             out = self.out * 0
             for inp, idx in zip(input, self.input_indices):
