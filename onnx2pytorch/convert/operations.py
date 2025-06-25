@@ -114,8 +114,13 @@ def convert_operations(onnx_graph, opset_version, batch_dim=0, enable_pruning=Tr
             op = convert_layer(node, "Conv", params)
         elif node.op_type == "ConvTranspose":
             op = convert_layer(node, "ConvTranspose", params)
+        # Modified this
         elif node.op_type == "Div":
-            op = Div()
+            const = extract_constant(weights, node.input[1])  
+            if const is not None:
+                op = Div(other=const)
+            else:
+                op = Div()
         elif node.op_type == "Elu":
             op = nn.ELU(**extract_attributes(node), inplace=True)
         elif node.op_type == "Equal":
